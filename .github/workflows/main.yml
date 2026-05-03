@@ -91,4 +91,3 @@ jobs:
       with:
         name: obsidian-apk
         path: $HOME/chromium/src/out/Obsidian/apks/Chrome.apk
-name
