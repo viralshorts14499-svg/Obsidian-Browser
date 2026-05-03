@@ -1,0 +1,92 @@
+name: Build Obsidian
+
+on:
+  push:
+    branches:
+      - main  # Trigger on push to the main branch
+  pull_request:
+    branches:
+      - main  # Trigger on pull request to the main branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # Using the Ubuntu environment for the build
+
+    steps:
+    # Step 1: Check out the repository
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    # Step 2: Set up Java
+    - name: Set up JDK 17
+      uses: actions/setup-java@v2
+      with:
+        java-version: '17'
+
+    # Step 3: Install dependencies
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git python3 clang make cmake wget unzip openjdk-17 ndk-sysroot
+
+    # Step 4: Install depot_tools
+    - name: Install depot_tools
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $HOME/depot_tools
+        echo "$HOME/depot_tools" >> $GITHUB_PATH
+
+    # Step 5: Clone Chromium and Sync Dependencies
+    - name: Clone Chromium and Sync Dependencies
+      run: |
+        mkdir -p $HOME/chromium
+        cd $HOME/chromium
+        git clone https://chromium.googlesource.com/chromium/src.git
+        cd src
+        gclient sync --with_branch_heads --jobs=8
+
+    # Step 6: Install build dependencies
+    - name: Install Chromium Build Dependencies
+      run: |
+        cd $HOME/chromium/src
+        ./build/install-build-deps.sh
+
+    # Step 7: Configure the build for Android ARM64
+    - name: Configure build for Android ARM64
+      run: |
+        cd $HOME/chromium/src
+        gn gen out/Obsidian --args='target_os="android" target_cpu="arm64" is_debug=false is_chrome_branded=false enable_reporting=false enable_crash_reporter=false enable_nacl=false'
+
+    # Step 8: Modify privacy-related settings
+    - name: Modify privacy settings
+      run: |
+        cd $HOME/chromium/src
+        sed -i 's/#define GOOGLE_API_KEY ""/define GOOGLE_API_KEY ""/' build/config/chromium_config.h
+        sed -i 's/#define GOOGLE_API_KEY_REACTOR 1/#define GOOGLE_API_KEY_REACTOR 0/' build/config/chromium_config.h
+        sed -i 's/#define GOOGLE_SIGNIN_API 1/#define GOOGLE_SIGNIN_API 0/' build/config/chromium_config.h
+        sed -i 's/#define ENABLE_SAFE_BROWSING 1/#define ENABLE_SAFE_BROWSING 0/' build/config/chromium_config.h
+        sed -i 's/#define ENABLE_WEBRTC 1/#define ENABLE_WEBRTC 0/' build/config/chromium_config.h
+        sed -i 's/#define ENABLE_AUTOMATIC_UPDATES 1/#define ENABLE_AUTOMATIC_UPDATES 0/' build/config/chromium_config.h
+
+    # Step 9: Replace branding and logos
+    - name: Replace branding and logos
+      run: |
+        cd $HOME/chromium/src
+        sed -i 's/Chromium/Obsidian/g' chrome/app/grit/chromium_resources.grd
+        sed -i 's/Chrome/Obsidian/g' chrome/app/grit/chromium_resources.grd
+        cp ./Obsidian.png chrome/app/resources/icon.png
+        cp ./Obsidian.png chrome/app/resources/logo.png
+        sed -i 's/"Chrome"/"Obsidian"/g' chrome/app/resources/strings.grd
+        sed -i 's/"Chrome Browser"/"Obsidian Privacy Browser"/g' chrome/app/resources/strings.grd
+
+    # Step 10: Build Chromium (Obsidian)
+    - name: Build Obsidian for Android ARM64
+      run: |
+        cd $HOME/chromium/src
+        ninja -C out/Obsidian chrome
+
+    # Step 11: Upload the APK as an artifact (optional)
+    - name: Upload APK as artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: obsidian-apk
+        path: $HOME/chromium/src/out/Obsidian/apks/Chrome.apk
